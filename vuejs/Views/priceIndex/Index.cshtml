@@ -1,0 +1,398 @@
+﻿
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>簡易五子棋</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.11"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #app {
+            padding-left: 30%;
+            width: 500px;
+        }
+
+        .h2Title {
+            text-align: center;
+        }
+
+        #app h3 {
+            color: red;
+        }
+
+        .Fbuttons {
+            margin-bottom: 1rem;
+        }
+
+        .main {
+            background-color: bisque;
+            width: 30rem;
+        }
+
+        .restart, .regret, .undo {
+            background: bisque;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        #chess {
+            position: relative;
+            width: 440px;
+            height: 450px;
+            padding-left: 30px;
+            padding-top: 30px;
+            background-color: bisque;
+        }
+
+            #chess .squre {
+                width: 28px;
+                height: 28px;
+                border: 1px solid #666;
+                float: left;
+            }
+
+        #box01 .squre:hover {
+            background-color: pink;
+        }
+
+        #box01 {
+            position: absolute;
+            margin: 0 auto;
+            width: 450px;
+            height: 450px;
+            top: 15px;
+            left: 15px;
+        }
+
+            #box01 .qz {
+                width: 30px;
+                height: 30px;
+                border: 0px solid #C7C7C7;
+                float: left;
+                border-radius: 50%;
+                /* margin: 1px; */
+            }
+
+                #box01 .qz:hover {
+                    background-color: pink;
+                }
+
+        .toggle {
+            float: right;
+        }
+    </style>
+</head>
+<!--
+ 1.vue實現五子棋
+    空棋盤開局。
+        畫網格：網格有 15 行 15 列，共有 225 個交叉點
+    黑先、白後，交替下子，每次只能下一子
+    勝負判定
+        按照簡單的規則，從當前下子點位的方向判斷()。如果有一個方向滿足連續5個黑子或白子，遊戲結束。
+ 2.支持dom和canvas切換
+    1、判斷瀏覽器是否支持canvas：
+        false: 不支持 切換dom方式
+        true:  支持 使用canvas
+ 3.實現悔棋功能
+ 4.實現撤銷悔棋
+
+ -->
+<body>
+    <div id="app">
+        <h2 class="h2Title">五子棋</h2>
+        <h3>{{victory}}</h3>
+        <h4 v-show="flag==STATUTS.STOP" style="color:red;text-align:center">暫停計時</h4>
+        <div class="Fbuttons">
+            <input type="button" value="重新開始" class="restart" @@click="restartInit()" />
+            <input type="button" value="悔棋" class="regret" @@click="regret()" />
+            <input type="button" value="撤銷悔棋" class="undo" @@click="undo()" />
+            <input type="button" :value="toggle?'暫停計時':'開始計時'" class="toggle" @@click="parse()" />
+            <h3 style="text-align:center" v-show="flag!=STATUTS.END">{{time}}s</h3>
+        </div>
+        <div class="main">
+            <canvas  id="myCanvas" ref="canvas" width="480" height="480">當前瀏覽器不支持Canvas</canvas>
+            
+        </div>
+
+    </div>
+    <!--  -->
+    <script>
+        const STATUTS = { START: 0 ,STOP:1,END:2}
+        var app = new Vue({
+            el: "#app",
+            data: {
+                pieceMapArr: [], //記錄棋盤落子情況
+                pieceColor: ["black", "white"], //棋子顏色
+                step: 0, //記錄當前步數
+                checkMode: [ //輸贏檢查方向模式
+                    [1, 0], //水平
+                    [0, 1], //豎直
+                    [1, 1], //左斜線
+                    [1, -1], //右斜線
+                ],
+                flag: 0,
+                victory: '',
+                history: [], //歷史記錄位置
+                historyVal: [], //歷史記錄不被刪除數組
+                stepHistory: 0,
+                domPiece: [], //
+                toggle: true, //true為canvas,false為dom
+                //---------------
+                time: 30,
+                timer: null,
+                t:0
+            },
+            mounted() {   
+                this.t = prompt('請輸入等待秒數(請輸入正整數，預設為30秒)')
+                this.tim();
+                this.timers();
+                console.log(this.t);
+                    this.drawpieceBoard();
+                    const canvas = this.$refs.canvas;
+                    // 添加點擊監聽事件
+                    canvas.onclick = e => {
+                        if (this.flag==STATUTS.END) {
+                            alert("遊戲結束,請重新開始~");
+                            return;
+                        }
+                        //判斷點擊範圍是否越出棋盤
+                        if (e.offsetX < 25 || e.offsetX > 450 || e.offsetY < 25 || e.offsetY > 450) {
+                            return;
+                        }
+                        if(this.flag==STATUTS.START){
+                            let dx = Math.floor((e.offsetX + 15) / 30) * 30;
+                            let dy = Math.floor((e.offsetY + 15) / 30) * 30;
+                            console.log('this.pieceMapArr 數組', this.pieceMapArr)
+                            if (this.pieceMapArr[dx / 30 - 1][dy / 30 - 1] == 0) {
+                                console.log('落下棋子', dx, dy, this.pieceColor[this.step % 2])
+                                this.drawPiece(dx, dy, this.pieceColor[this.step % 2]); //落下棋子
+                                this.pieceMapArr[dx / 30 - 1][dy / 30 - 1] = this.pieceColor[this.step % 2];
+                                this.tim()
+                                //歷史記錄位置
+                                this.history.length = this.step;
+                                this.history.push({
+                                    dx,
+                                    dy,
+                                    color: this.pieceColor[this.step % 2]
+                                });
+                                this.historyVal.push({
+                                    dx,
+                                    dy,
+                                    color: this.pieceColor[this.step % 2]
+                                });
+                                this.stepHistory++
+                                console.log('this.history', this.history);
+                                //檢查當前玩家是否贏了遊戲
+                                for (var i = 0; i < 4; i++) {
+                                    this.checkWin(dx / 30 - 1, dy / 30 - 1, this.pieceColor[this.step % 2], this.checkMode[i]);
+                                }
+                                this.step++;
+                            } else {
+                                alert("不能落在有棋子的地方！");
+                            }
+                        };
+                    }                        
+                
+            },
+            methods: {
+                parse() {
+                    if (this.flag == STATUTS.START) {
+                        clearInterval(this.timer);
+                        this.flag = STATUTS.STOP;  
+                        this.toggle = !this.toggle;
+                    }
+                    else if (this.flag == STATUTS.STOP) {
+                            this.timer = setInterval(this.countdown, 1000);
+                            this.flag = STATUTS.START;
+                            this.toggle = true;
+                    } else {
+                        alert("請按下重新開始")
+                    }
+                    
+                    
+                },
+                tim() {                    
+                    var r = /\d+$/;
+                    if (r.test(this.t)) {
+                        this.time = this.t;
+                        console.log(this.t + '!!!!')
+                    }                        
+                    else
+                        this.time = 30;
+                },
+                countdown() {
+                    this.time --;
+                    if (this.time == 0) {                        
+                        this.time = 30                        
+                        this.flag = true;
+                        alert(this.pieceColor[this.step % 2] == "black" ? "黑棋逾時" : "白棋逾時" );
+                        this.step++;
+                        this.victory = this.pieceColor[(this.step++) % 2] == "black" ? "黑棋" : "白棋" ;
+                        this.victory += "獲勝"
+                        clearInterval(this.timer);
+                    }
+                },               
+                //初始化棋盤數組
+                pieceArr() {
+                    for (let i = 0; i < 15; i++) {
+                        this.pieceMapArr[i] = [];
+                        for (let j = 0; j < 15; j++) {
+                            this.pieceMapArr[i][j] = 0;
+                        }
+                    }
+                },
+                //重新開始
+                restartInit() {
+                    clearInterval(this.timer)
+                    this.t = prompt('請輸入等待秒數(請輸入正整數，預設為30秒)')
+                    this.tim();
+                    this.timers();                    
+                        //重畫
+                        this.repaint();
+                        // 繪製棋盤
+                        this.drawpieceBoard();
+                        this.flag = STATUTS.START;
+                        this.step = 0;
+                        this.stepHistory = 0;
+                        this.historyVal = [];
+                        this.history = [];
+                    this.victory = '';
+                    this.toggle = true;
+                    
+                },
+                //---------canvas----------
+                // 繪製棋盤
+                drawpieceBoard() {
+                    //初始化棋盤數組
+                    this.pieceArr();
+                    //canvas 繪製
+                    let canvas = this.$refs.canvas
+                    // 調用canvas元素的getContext 方法訪問獲取2d渲染的上下文
+                    let context = canvas.getContext("2d");
+                    context.strokeStyle = '#666'
+                    for (let i = 0; i < 15; i++) {
+                        //落在方格(canvas 的寬高是450)
+                        //落在交叉點(480)
+                        context.beginPath();
+                        context.moveTo((i + 1) * 30, 30);
+                        context.lineTo((i + 1) * 30, canvas.height - 30);
+                        context.closePath();
+                        context.stroke();
+                        context.beginPath();
+                        context.moveTo(30, (i + 1) * 30);
+                        context.lineTo(canvas.width - 30, (i + 1) * 30);
+                        context.closePath();
+                        context.stroke();
+                    }
+                },
+                //繪製棋子
+                drawPiece(x, y, color) {
+                    let canvas = this.$refs.canvas
+                    let context = canvas.getContext("2d");
+                    context.beginPath(); //開始一條路徑或重置當前的路徑
+                    context.arc(x, y, 15, 0, Math.PI * 2, false);
+                    context.closePath();
+                    context.fillStyle = color;
+                    context.fill();
+                },
+                //勝負判斷函數
+                checkWin(x, y, color, mode) {
+                    let count = 1; //記錄
+                    for (let i = 1; i < 5; i++) { 
+                        if (this.pieceMapArr[x + i * mode[0]]) {
+                            if (this.pieceMapArr[x + i * mode[0]][y + i * mode[1]] == color) {
+                                count++;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    for (let j = 1; j < 5; j++) {
+                        if (this.pieceMapArr[x - j * mode[0]]) {
+                            if (this.pieceMapArr[x - j * mode[0]][y - j * mode[1]] == color) {
+                                count++;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    // console.log('勝負判斷函數', count)
+                    // console.log('color', color)
+                    if (count >= 5) {
+                        if (color == 'black') {
+                            this.victory = "黑子棋方勝利！";
+                        } else {
+                            this.victory = "白子棋方勝利！";
+                        }
+                        // 遊戲結束
+                        // console.log('遊戲結束')
+                        clearInterval(this.timer);
+                        this.flag = STATUTS.END;
+                    }
+                },
+                //重畫函數
+                timers() {
+                    this.timer=setInterval(this.countdown,1000)
+                },
+                repaint() {
+                    //重畫
+                    let canvas = this.$refs.canvas;
+                    let context = canvas.getContext("2d");
+                    context.fillStyle = "bisque";
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.beginPath();
+                    context.closePath();
+                },
+
+                //悔棋:
+                // canvas 創建一個二維數組，下棋或者悔棋都操作這個數組。操作完數據，把畫布全清，重新用數據畫一個棋盤。
+                // dom   二維數組刪除數組最後一項, 先清空棋子的填充顏色,在渲染上顏色
+                regret() {
+                    this.tim();
+                    if (this.history.length && !this.flag) {
+                        this.history.pop(); //刪除數組最後一項
+                        //重畫
+                        this.repaint();
+                        // 繪製棋盤
+                        this.drawpieceBoard();
+                        //繪製棋子
+                        this.history.forEach(e => {
+                            this.drawPiece(e.dx, e.dy, e.color)
+                            this.pieceMapArr[e.dx / 30 - 1][e.dy / 30 - 1] = e.color;
+                        });
+                        this.step--
+                    } else {
+                        alert("已經不能悔棋了~")
+                    }
+                },
+                //撤銷悔棋
+                undo() {
+                    this.tim();
+                    if ((this.historyVal.length > this.history.length) && !this.flag) {
+                        this.history.push(this.historyVal[this.step])
+                        //重畫
+                        this.repaint();
+                        // 繪製棋盤
+                        this.drawpieceBoard();
+                        this.history.forEach(e => {
+                            this.drawPiece(e.dx, e.dy, e.color)
+                            this.pieceMapArr[e.dx / 30 - 1][e.dy / 30 - 1] = e.color;
+                        });
+                        this.step++
+                    } else {
+                        alert("不能撤銷悔棋了~")
+                    }
+
+                },                
+
+            }
+        });
+    </script>
+</body>
+</html>
